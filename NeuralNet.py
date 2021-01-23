@@ -41,7 +41,7 @@ class NeuralNet:
             inputs = a1
         return z_list, activation_list
 
-
+#tests for convergence: use max epochs and if change in delta is below a certain threshold
     def backward_propagation(self, data, expected, l_rate, minibatch_size = 1, function_type = 'sigmoid'):
         data = np.array(data)
         z_list, activation_list = self.forward_propagate(data)
@@ -51,7 +51,6 @@ class NeuralNet:
         db_list = np.ndarray((self.numLayers), dtype = object)
         dw_list = np.ndarray((self.numLayers), dtype = object)
         for layer in range(self.numLayers-1, 0,-1):
-            #delta = np.dot(err, sigmoid_prime(z_list[layer-1]))
             delta = err * activation_prime(z_list[layer-1], func = function_type)
             delta_sum = np.sum(delta, axis = 1)
             deltas[layer] = delta
@@ -64,7 +63,18 @@ class NeuralNet:
             self.biases[layer-1]-=(l_rate/minibatch_size)  * db
             self.weights[layer-1]-= (l_rate/minibatch_size) * dw
         return error, deltas[1:], dw_list[1:], db_list[1:]
-
+    def train_network(self, data, expected, l_rate, minibatch_size = 1, function_type = 'sigmoid', max_epoch = 100):
+        iteration = 0
+        old_error = None
+        error = 0.0
+        delta = None
+        dw = None 
+        db = None
+        while iteration == 0 or (iteration < max_epoch and (abs((error-old_error)/(old_error))) > 0.01):
+            old_error = error
+            error, delta, dw, db = self.backward_propagation(data, expected, l_rate, minibatch_size, function_type)
+            iteration += 1
+        return error, delta, dw, db, iteration   
 """
 This function returns the z's in one layer given the data, the weights, and the biases for the layer.
 Parameters:

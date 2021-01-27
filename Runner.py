@@ -19,13 +19,9 @@ b = [[[0.45], [0.45], [0.45]], [[0.8],[0.8]]]
 #nn = NeuralNet(sizes = [2,3,2], biases = b, weights = w)
 nn = NeuralNet(sizes = [2,3,2])
 
-error, delta, dw, db, iteration = nn.train_network(x,y,0.5, minibatch_size=1, max_epoch=300)
+training_error, iteration = nn.batch_gradient_descent(x,y,l_rate = 0.01, max_epoch=1000)
 
-print("error: ", error)
-print("deltas: ", delta)
-print("dw's: ", dw)
-print("db: ", db)
-print('weights: ', nn.weights)
-print('biases: ', nn.biases)
-print('num iterations: ', iteration)
+print('stochastic training error: ', training_error)
+print('stochastic iterations: ', iteration)
+
 

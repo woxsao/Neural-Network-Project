@@ -40,27 +40,24 @@ class NeuralNet:
         activation_list.append(inputs)
         for layer in range(0, self.numLayers-1):
             z = activate(inputs, self.weights[layer], self.biases[layer])
-            z_list.append(z) 
-            if layer == self.numLayers-2 and self.sizes[-1]>1:
-                a1 = activation_func(z, func = 'softmax')
-            else:
-                a1 = activation_func(z, func = function_type)
+            z_list.append(z)
+            a1 = activation_func(z, func = function_type)
             activation_list.append(a1)
             inputs = a1
         return z_list, activation_list
 
 #tests for convergence: use max epochs and if change in delta is below a certain threshold
-    def backward_propagation(self, data, expected, l_rate, function_type = 'sigmoid'):
+    def backward_propagation(self, data, expected, l_rate, max_epoch = 100):
         data = np.array(data)
         z_list, activation_list = self.forward_propagate(data)
         err = activation_list[-1] - expected
-        print("activation last: ", activation_list[-1])
         error = 0.5 * (1/data.shape[1]) * np.sum((expected-activation_list[-1])**2)
         deltas = np.ndarray((self.numLayers), dtype = object)
         db_list = np.ndarray((self.numLayers), dtype = object)
         dw_list = np.ndarray((self.numLayers), dtype = object)
         for layer in range(self.numLayers-1, 0,-1):
-            delta = err * activation_prime(z_list[layer-1], func = function_type)
+            #delta = np.dot(err, sigmoid_prime(z_list[layer-1]))
+            delta = err * sigmoid_prime(z_list[layer-1])
             delta_sum = np.sum(delta, axis = 1)
             deltas[layer] = delta
             db = delta_sum
@@ -72,14 +69,14 @@ class NeuralNet:
             self.biases[layer-1]-=(l_rate/data.shape[1])  * db
             self.weights[layer-1]-= (l_rate/data.shape[1]) * dw
         return error, deltas[1:], dw_list[1:], db_list[1:]
-        
+
     def batch_gradient_descent(self, data, expected, l_rate, function_type = 'sigmoid', max_epoch = 100):
         with np.errstate(divide='ignore'):
             iteration = 0
             old_error = None
             error = 0.0
-            while iteration == 0 or (iteration < max_epoch and (abs((error-old_error)/(old_error))) > 0.0001):
-            #while(iteration < max_epoch):
+            #while iteration == 0 or (iteration < max_epoch and (abs((error-old_error)/(old_error))) > 0.0001):
+            while(iteration < max_epoch):
                 old_error = error
                 error, delta, dw, db = self.backward_propagation(data, expected, l_rate, function_type)
                 iteration += 1
@@ -98,7 +95,10 @@ class NeuralNet:
                 np.random.shuffle(train.T)
                 for i in range(0,train.shape[1],minibatch_size):
                     batch_data = train[1:, i:(i + minibatch_size)]
-                    batch_expected = np.reshape(train[0, i:(i + minibatch_size)], newshape= (1,batch_data.shape[1]))
+                    if(self.sizes[-1] > 1):
+                        batch_expected = one_hot_encoder(train[0, i:(i+minibatch_size)])
+                    else:
+                        batch_expected = np.reshape(train[0, i:(i + minibatch_size)], newshape= (1,batch_data.shape[1]))
                     error, delta, dw, db = self.backward_propagation(batch_data, batch_expected, l_rate, function_type)
                     error_list= np.append(error_list, error)
                 #i think the trarining error should be the average of the last batch for all epochs?
@@ -107,7 +107,9 @@ class NeuralNet:
             training_error = error
             #Testing section:
             activation_list = self.forward_propagate(test[1:,:])[1] 
-            expected_test = test[0, :]    
+            expected_test = test[0, :]
+            print('expected shape: ', expected_test.shape)
+            expected_test = one_hot_encoder(expected_test)    
             print('expected: ', expected_test)
             print('activation: ', activation_list[-1])       
             testing_error = 0.5 * (1/test.shape[1]) * np.sum((expected_test-activation_list[-1])**2)
@@ -146,13 +148,16 @@ Parameters:
 Returns;
 - the list of activations at this layer. 
 """
+@np.vectorize
 def sigmoid(z):
-    if z.all() >=0:
+    if z >=0:
         a2 = 1/(1+np.exp(-z)) 
     else:
         a2 = np.exp(z)/(1+np.exp(z))
+    a2 = 1/(1+np.exp(-z)) 
     return a2
 
+@np.vectorize
 def sigmoid_prime(z):
     a = sigmoid(z)
     aprime = a*(1-a)
@@ -184,9 +189,8 @@ def softmax_prime(z):
     return np.reshape(D, newshape = (1, D.shape[0]))
 
 def one_hot_encoder(expected):
-    expected = expected.reshape(expected.shape[1],)
+    expected = expected.reshape(expected.shape[0],)
     #b = np.zeros((expected.size, int(expected.max()+1)))
     b = np.zeros((expected.size, 4))
     b[np.arange(expected.size),expected.astype(int)] = 1
-    
     return b.T[1:,:]

@@ -1,13 +1,5 @@
-"""
-TODO:
-- doc says we can use sigmoid instaed of softmax?? ok um
-- fix softmax?
-- comment stuff/remove prints
-
-"""
 import numpy as np
-from sklearn.utils import shuffle
-import random
+
 
 class NeuralNet:
     def __init__(self, sizes, biases = None, weights = None):
@@ -17,14 +9,14 @@ class NeuralNet:
             self.weights = []
             self.biases = []
             for i in range(1, self.numLayers):
-                self.weights.append(np.random.rand(sizes[i],sizes[i-1]))
-                self.biases.append(np.random.rand(sizes[i],1))
+                self.weights.append(np.random.rand(sizes[i],sizes[i-1])-0.5)
+                self.biases.append(np.random.rand(sizes[i],1)-0.5)
             self.weights = np.array(self.weights)
             self.biases = np.array(self.biases)
+            
         else:
             self.biases = biases
             self.weights = weights
-        #for sizes [2,3,2] I'd expect for the weights matrix to be []
         
     """
     This function returns the z's and activations at each layer
@@ -46,74 +38,87 @@ class NeuralNet:
             inputs = a1
         return z_list, activation_list
 
-#tests for convergence: use max epochs and if change in delta is below a certain threshold
-    def backward_propagation(self, data, expected, l_rate, max_epoch = 100):
+    """
+    This function runs the backpropagation algorithm. 
+    Parameters: 
+    - data: the input data points
+    - expected: the list of expected classes
+    - l_rate: learning rate (float between 0-1)
+    - function_type: string value indicating which activation function to use (sigmoid or reLU is what I have)
+    - dw_prev: If intending on using momentum, must specify the dw's of the previous iteration
+    - mometnum: float between (0-1) to affect the weight increments. 
+    Returns:
+    - error: training error
+    - deltas at each layer
+    -dw's at each layer
+    -db's at each layer
+    """
+    def backward_propagation(self, data, expected, l_rate, function_type = 'sigmoid', dw_prev = None, momentum = 0):
         data = np.array(data)
-        z_list, activation_list = self.forward_propagate(data)
+        z_list, activation_list = self.forward_propagate(data, function_type= function_type)
         err = activation_list[-1] - expected
         error = 0.5 * (1/data.shape[1]) * np.sum((expected-activation_list[-1])**2)
         deltas = np.ndarray((self.numLayers), dtype = object)
         db_list = np.ndarray((self.numLayers), dtype = object)
         dw_list = np.ndarray((self.numLayers), dtype = object)
         for layer in range(self.numLayers-1, 0,-1):
-            #delta = np.dot(err, sigmoid_prime(z_list[layer-1]))
-            delta = err * sigmoid_prime(z_list[layer-1])
+            delta = err * activation_prime(z_list[layer-1], func = function_type)
             delta_sum = np.sum(delta, axis = 1)
             deltas[layer] = delta
             db = delta_sum
             db = db.reshape(db.shape[0],1)
             db_list[layer] = db
-            dw = np.dot(delta, activation_list[layer-1].T)
+            dw = np.dot(delta, activation_list[layer-1].T) * (l_rate/data.shape[1])
             dw_list[layer] = dw
             err = np.dot(np.array(self.weights[layer-1]).T, delta)
             self.biases[layer-1]-=(l_rate/data.shape[1])  * db
-            self.weights[layer-1]-= (l_rate/data.shape[1]) * dw
+            if(dw_prev != None):
+                self.weights[layer-1]-= dw + (momentum* dw_prev[layer-1])
+            else:
+                self.weights[layer-1]-= dw
         return error, deltas[1:], dw_list[1:], db_list[1:]
 
-    def batch_gradient_descent(self, data, expected, l_rate, function_type = 'sigmoid', max_epoch = 100):
+    """
+    Runs minibatch gradient descent
+    Parameters:
+    - data: data points 
+    - expected: list of classes for each point
+    -l_rate: learning rate (float between 0-1)
+    - momentum_val: float between 0-1 that specifies a momentum value
+    -function type: string indicating which activation function to use
+    - max_epoch: maximum iterations for the gradient descent
+    - minibatch_size: batch size
+    - threshold: error threshold percentage (0-1), the smaller the value the harder it is to converge. 
+    """    
+    def descent_with_momentum(self, data, expected, l_rate, momentum_val = 0,function_type = 'sigmoid', max_epoch = 100, minibatch_size = 1, threshold = 0.0001):
         with np.errstate(divide='ignore'):
+            expected = one_hot_encoder(expected)
             iteration = 0
             old_error = None
             error = 0.0
-            #while iteration == 0 or (iteration < max_epoch and (abs((error-old_error)/(old_error))) > 0.0001):
-            while(iteration < max_epoch):
-                old_error = error
-                error, delta, dw, db = self.backward_propagation(data, expected, l_rate, function_type)
-                iteration += 1
-                print('error: ', error)
-            return error, iteration
-
-    def train_network(self, train, test, l_rate, minibatch_size = 1, function_type = 'sigmoid', max_epoch = 100):
-          with np.errstate(divide='ignore'):
-            iteration = 1
-            old_error = 0.0
-            error = 0.0
-            while iteration == 1 or (iteration <= max_epoch and abs((error-old_error)/(old_error)) > 0.001):
-                old_error = error
-                error_list = []
-                #multidimensional arrays only shuffled along first axis
-                np.random.shuffle(train.T)
-                for i in range(0,train.shape[1],minibatch_size):
-                    batch_data = train[1:, i:(i + minibatch_size)]
-                    if(self.sizes[-1] > 1):
-                        batch_expected = one_hot_encoder(train[0, i:(i+minibatch_size)])
+            dw = None
+            error_list = []
+            data_full = np.append(expected,data, axis = 0)
+            while iteration <2 or (iteration < max_epoch and abs((old_error-error)/(old_error)) > threshold):
+                np.random.shuffle(data_full.T) 
+                for i in range(0,data.shape[1], minibatch_size):
+                    batch_data = data_full[3:, i:(i + minibatch_size)]
+                    batch_expected = data_full[0:3, i:(i+minibatch_size)]
+                    if(i == 0):
+                        dw_prev = None
                     else:
-                        batch_expected = np.reshape(train[0, i:(i + minibatch_size)], newshape= (1,batch_data.shape[1]))
-                    error, delta, dw, db = self.backward_propagation(batch_data, batch_expected, l_rate, function_type)
-                    error_list= np.append(error_list, error)
-                #i think the trarining error should be the average of the last batch for all epochs?
-                error = np.average(error_list)
+                        dw_prev = dw
+                    error, delta, dw, db = self.backward_propagation(batch_data, batch_expected, l_rate, function_type, dw_prev = dw_prev, momentum = momentum_val)
+                    
                 iteration += 1
-            training_error = error
-            #Testing section:
-            activation_list = self.forward_propagate(test[1:,:])[1] 
-            expected_test = test[0, :]
-            print('expected shape: ', expected_test.shape)
-            expected_test = one_hot_encoder(expected_test)    
-            print('expected: ', expected_test)
-            print('activation: ', activation_list[-1])       
-            testing_error = 0.5 * (1/test.shape[1]) * np.sum((expected_test-activation_list[-1])**2)
-            return training_error, testing_error, iteration, activation_list[-1]
+                z_list, activation_list = self.forward_propagate(data, function_type)
+                old_error = error
+                error = 0.5*(1/data.shape[1] * np.sum((expected-activation_list[-1])**2))
+                error_list.append(error)
+                print('error: ', error, ' iteration: ', iteration)
+            print('error list shape: ', error_list)
+            return error_list, iteration
+
 """
 This function returns the z's in one layer given the data, the weights, and the biases for the layer.
 Parameters:
@@ -127,22 +132,35 @@ def activate(a, w, b):
     z = np.add(np.dot(w,a), b)
     return z
 
+"""
+This function returns the activations at a layer given a z and function type.
+Parameters:
+- z: the z for the layer
+- func: the function type, default is sigmoid, reLU also supported.
+Returns: 
+- activations at the layer
+"""
 def activation_func(z, func = 'sigmoid'):
     if func == 'sigmoid':
         return sigmoid(z)
-    elif func == 'reLU':
-        return reLU(z)
     else:
-        return softmax(z)
+        return reLU(z)
+"""
+This function returns the derivative of the activation function to calculate delta for backprop.
+Parameters:
+-z: Z's at specified layer
+-func: function type, default is sigmoid but reLU also supported.
+Returns:
+- the derivative function applied to the z's. 
+"""    
 def activation_prime(z, func = 'sigmoid'):
     if func == 'sigmoid':
         return sigmoid_prime(z)
-    elif func == 'reLU':
-        return reLUprime(z)
     else:
-        return softmax_prime(z)
+        return reLUprime(z)
+    
 """
-This function returns  the activations at a layer
+This function returns  the activations at a layer using sigmoid
 Parameters: 
 - z: The z's at this layer 
 Returns;
@@ -157,37 +175,58 @@ def sigmoid(z):
     a2 = 1/(1+np.exp(-z)) 
     return a2
 
+"""
+Returns the derivative function applied to z's at a layer for sigmoid.
+Parameters: 
+- z: The z's at this layer 
+Returns;
+- list of Sigmoid derivative applied to z's
+"""
 @np.vectorize
 def sigmoid_prime(z):
     a = sigmoid(z)
     aprime = a*(1-a)
     return aprime
 
+"""
+This function returns  the activations at a layer using reLU
+Parameters: 
+- z: The z's at this layer 
+Returns;
+- the list of activations at this layer. 
+"""
+@np.vectorize
 def reLU(z):
-    val = np.maximum(0,z)
-    return val
+    if(z<0):
+        return 0
+    else:
+        return z
+
+"""
+Returns the derivative function applied to z's at a layer for reLU.
+Parameters: 
+- z: The z's at this layer 
+Returns;
+- list of reLU derivative applied to z's
+"""
+@np.vectorize
 def reLUprime(z):
-    z[z<=0] = 0
-    z[z>0] = 1
-    return z
+    if(z<0):
+        return 0
+    else:
+        return 1
 
 
-def softmax(z):
-    shiftz = z - np.max(z)
-    e = np.exp(shiftz)
-    return e / np.sum(e)
+"""
+This function takes in an array with the expected classes of each wine and returns a 3xn array where the values
+are all 0 except for the row where the wine class corresponds. For instance, if the wine sample's class is 2, the corresponding 
+column would look like [0,1,0]
 
-def softmax_prime(z):
-    print("z shape: ", z.shape)
-    Sz = softmax(z)
-    print('softmax(z) shape: ', Sz.shape)
-    # -SjSi can be computed using an outer product between Sz and itself. Then
-    # we add back Si for the i=j cases by adding a diagonal matrix with the
-    # values of Si on its diagonal.
-    D = -np.outer(Sz, Sz) + np.diag(Sz.flatten())
-    D = D.flatten()
-    return np.reshape(D, newshape = (1, D.shape[0]))
-
+Parameters: 
+-expected: list of n samples and their wine classes (integers running from 1....n)
+Returns: 
+- array of (x by n) where x is the number of classes and n is the number of samples
+"""
 def one_hot_encoder(expected):
     expected = expected.reshape(expected.shape[0],)
     #b = np.zeros((expected.size, int(expected.max()+1)))
